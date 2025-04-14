@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: journal-archiver
+  namespace: journal-system
+  labels:
+    app: journal-archiver
+spec:
+  schedule: "*/10 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: archiver
+            image: alpine:3.17
+            command:
+            - /bin/sh
+            - -c
+            - |
+              apk add --no-cache curl tar
+              
+              # Создание рабочей директории
+              mkdir -p /tmp/journals
+              
+              # Получение текущей метки времени
+              TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+              
+              # Получение логов из API
+              echo "Извлечение журналов из API..."
+              curl -s http://journal-api-service.journal-system/logs > /tmp/journals/journals.log
+              
+              # Архивирование
+              echo "Создание архива..."
+              tar -czf /archives/journals_${TIMESTAMP}.tar.gz -C /tmp journals
+              
+              # Очистка
+              echo "Архив создан: /archives/journals_${TIMESTAMP}.tar.gz"
+              ls -lh /archives/
+            volumeMounts:
+            - name: archive-storage
+              mountPath: /archives
+          restartPolicy: OnFailure
+          volumes:
+          - name: archive-storage
+            persistentVolumeClaim:
+              claimName: journal-archive-pvc
