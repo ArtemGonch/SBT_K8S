@@ -7,6 +7,13 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from loguru import logger
 from pydantic import BaseModel
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+
+LOG_REQUESTS_TOTAL = Counter(
+    'journal_log_requests_total', 'Общее количество запросов к /log')
+LOG_SUCCESS = Counter('journal_log_success', 'Успешные операции логирования')
+LOG_FAILURE = Counter('journal_log_failure', 'Неудачные операции логирования')
+REQUEST_TIME = Histogram('journal_request_duration_seconds', 'Время обработки запроса')
 
 app = FastAPI(
     title="JournalAPI",
@@ -49,7 +56,9 @@ async def system_status() -> Dict[str, str]:
 
 
 @app.post("/log")
+@REQUEST_TIME.time()
 async def write_log(entry: JournalEntry) -> Dict[str, Any]:
+    LOG_REQUESTS_TOTAL.inc()
     timestamp = datetime.now().isoformat()
 
     try:
@@ -57,6 +66,7 @@ async def write_log(entry: JournalEntry) -> Dict[str, Any]:
             log_file.write(f"{timestamp} - {entry.message}\n")
 
         logger.info(f"Добавлена запись в журнал: {entry.message}")
+        LOG_SUCCESS.inc()
 
         return {
             "status": "success",
@@ -65,6 +75,7 @@ async def write_log(entry: JournalEntry) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"Ошибка при записи в журнал: {str(e)}")
+        LOG_FAILURE.inc()
         raise HTTPException(
             status_code=500, detail=f"Не удалось записать в журнал: {str(e)}")
 
@@ -84,6 +95,11 @@ async def get_logs() -> str:
         logger.error(f"Ошибка при чтении журнала: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Ошибка доступа к журналу: {str(e)}")
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+async def get_metrics():
+    return PlainTextResponse(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.on_event("startup")
