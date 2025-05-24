@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: journal-collector
+  namespace: journal-system
+  labels:
+    app: journal-collector
+spec:
+  selector:
+    matchLabels:
+      app: journal-collector
+  template:
+    metadata:
+      labels:
+        app: journal-collector
+    spec:
+      containers:
+      - name: collector
+        image: alpine:3.17
+        command:
+        - /bin/sh
+        - -c
+        - |
+          apk add --no-cache curl jq
+          mkdir -p /var/log/collected
+          
+          while true; do
+            echo "$(date): Сбор журналов из сервиса journal-api..."
+            curl -s http://journal-api-service.journal-system/logs > /var/log/collected/collected.log
+            
+            echo "Журналы собраны:"
+            echo "===================="
+            cat /var/log/collected/collected.log
+            echo "===================="
+            
+            sleep 90
+          done
+        volumeMounts:
+        - name: collector-storage
+          mountPath: /var/log/collected
+      volumes:
+      - name: collector-storage
+        emptyDir: {}
